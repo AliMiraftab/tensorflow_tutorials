@@ -107,6 +107,7 @@ def linear(x, n_units, scope=None, stddev=0.02,
     with tf.variable_scope(scope or "Linear"):
         matrix = tf.get_variable("Matrix", [shape[1], n_units], tf.float32,
                                  tf.random_normal_initializer(stddev=stddev))
+        tf.summary.histogram("weights", matrix)
         return activation(tf.matmul(x, matrix))
 
 
@@ -152,13 +153,17 @@ def conv2d(x, n_filters,
         w = tf.get_variable(
             'w', [k_h, k_w, x.get_shape()[-1], n_filters],
             initializer=tf.truncated_normal_initializer(stddev=stddev))
+        tf.summary.histogram("w", w)
         conv = tf.nn.conv2d(
             x, w, strides=[1, stride_h, stride_w, 1], padding=padding)
         if bias:
             b = tf.get_variable(
                 'b', [n_filters],
                 initializer=tf.truncated_normal_initializer(stddev=stddev))
-            conv = tf.nn.bias_add(conv, b)
+            tf.summary.histogram("biases", b)
+            conv = tf.nn.bias_add(conv, b)            
         if activation:
             conv = activation(conv)
+            
+        tf.summary.histogram("activations", conv)
         return conv

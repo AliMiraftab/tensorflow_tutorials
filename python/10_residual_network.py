@@ -9,6 +9,12 @@ from collections import namedtuple
 from math import sqrt
 
 
+
+# For Tensorboard
+Saved_Dir = "/home/cc/results/MNIST/tb/size_64_plain/"
+# For Model Data
+saved_filename = "/home/cc/results/MNIST/saved_models/size_64_plain.ckpt"
+
 # %%
 def residual_network(x, n_outputs,
                      activation=tf.nn.relu):
@@ -117,49 +123,88 @@ def residual_network(x, n_outputs,
 def test_mnist():
     """Test the resnet on MNIST."""
     import tensorflow.examples.tutorials.mnist.input_data as input_data
+    
+    
+    graph = tf.Graph()
+    with graph.as_default():
+    
+        mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
+        x = tf.placeholder(tf.float32, [None, 784])
+        y = tf.placeholder(tf.float32, [None, 10])
+        y_pred = residual_network(x, 10)
 
-    mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
-    x = tf.placeholder(tf.float32, [None, 784])
-    y = tf.placeholder(tf.float32, [None, 10])
-    y_pred = residual_network(x, 10)
+        # %% Define loss/eval/training functions
+        cross_entropy = -tf.reduce_sum(y * tf.log(y_pred))
+        optimizer = tf.train.AdamOptimizer().minimize(cross_entropy)
 
-    # %% Define loss/eval/training functions
-    cross_entropy = -tf.reduce_sum(y * tf.log(y_pred))
-    optimizer = tf.train.AdamOptimizer().minimize(cross_entropy)
+        # %% Monitor accuracy
+        correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y, 1))
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
 
-    # %% Monitor accuracy
-    correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y, 1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
+        merged_summary = tf.summary.merge_all()
+
+        writer = tf.summary.FileWriter(Saved_Dir)
+        train_writer = tf.summary.FileWriter(Saved_Dir + "train")
+        test_writer = tf.summary.FileWriter(Saved_Dir + "test")
+
+
+        saver = tf.train.Saver()
 
     # %% We now create a new session to actually perform the initialization the
     # variables:
-    sess = tf.Session()
-    sess.run(tf.initialize_all_variables())
+    with tf.Session(graph=graph) as sess:
+        sess.run(tf.global_variables_initializer())
 
-    # %% We'll train in minibatches and report accuracy:
-    batch_size = 50
-    n_epochs = 5
-    for epoch_i in range(n_epochs):
-        # Training
-        train_accuracy = 0
-        for batch_i in range(mnist.train.num_examples // batch_size):
-            batch_xs, batch_ys = mnist.train.next_batch(batch_size)
-            train_accuracy += sess.run([optimizer, accuracy], feed_dict={
-                x: batch_xs, y: batch_ys})[1]
-        train_accuracy /= (mnist.train.num_examples // batch_size)
+        writer.add_graph(sess.graph)
+        print("Writing Graph")
 
-        # Validation
-        valid_accuracy = 0
-        for batch_i in range(mnist.validation.num_examples // batch_size):
-            batch_xs, batch_ys = mnist.validation.next_batch(batch_size)
-            valid_accuracy += sess.run(accuracy,
-                                       feed_dict={
-                                           x: batch_xs,
-                                           y: batch_ys
-                                       })
-        valid_accuracy /= (mnist.validation.num_examples // batch_size)
-        print('epoch:', epoch_i, ', train:',
-              train_accuracy, ', valid:', valid_accuracy)
+        # %% We'll train in minibatches and report accuracy:
+        batch_size = 50
+        n_epochs = 1
+
+        cntr0 = 0
+        for epoch_i in range(n_epochs):
+            # Training
+            train_accuracy = 0
+            for batch_i in range(mnist.train.num_examples // batch_size):
+                batch_xs, batch_ys = mnist.train.next_batch(batch_size)
+                feed_dict={x: batch_xs, y: batch_ys}
+
+                train_accuracy += sess.run([optimizer, accuracy], feed_dict=feed_dict)[1]
+
+                if batch_i % 10 == 0:
+                    [train_accuracy] = sess.run([accuracy], feed_dict=feed_dict)
+                    print("epoch %d, step %d, training accuracy %g" %(epoch_i, batch_i, train_accuracy))
+                    s = sess.run(merged_summary, feed_dict=feed_dict)
+                    train_writer.add_summary(s, cntr0)
+
+                test_dataset, test_labels = mnist.validation.next_batch(batch_size)
+                feed_dict={x: test_dataset, y: test_labels}  
+                print("test accuracy %g"%accuracy.eval(session=sess, feed_dict = feed_dict))
+
+                if batch_i % 10 == 0:
+                    s = sess.run(merged_summary, feed_dict=feed_dict)
+                    test_writer.add_summary(s, cntr0)
+
+                cntr0 += 1
+
+
+            train_accuracy /= (mnist.train.num_examples // batch_size)
+
+            # Validation
+            valid_accuracy = 0
+            for batch_i in range(mnist.validation.num_examples // batch_size):
+                batch_xs, batch_ys = mnist.validation.next_batch(batch_size)
+                valid_accuracy += sess.run(accuracy,
+                                           feed_dict={
+                                               x: batch_xs,
+                                               y: batch_ys
+                                           })
+            valid_accuracy /= (mnist.validation.num_examples // batch_size)
+            print('epoch:', epoch_i, ', train:',
+                  train_accuracy, ', valid:', valid_accuracy)
+
+        writer.add_graph(sess.graph)    
 
 
 if __name__ == '__main__':
